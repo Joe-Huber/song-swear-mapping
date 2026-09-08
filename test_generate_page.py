@@ -29,6 +29,16 @@ def test_build_dashboard_strips_required_chars():
     assert "<style>" in page and "</style>" in page
 
 
+def test_build_dashboard_has_charts():
+    fields, data = _sample_rows()
+    page = build_dashboard(data, fields)
+    assert page.count('class="chart-svg"') == 3
+    assert '<div id="tip" class="tooltip"></div>' in page
+    assert "Ice Band — ICE Fuck You (2026) — 76" in page
+    assert "Most frequent swear words" in page
+    assert "Swears per decade" in page
+
+
 class _WellFormed(HTMLParser):
     def error(self, message):  # legacy hook; feed() raises on bad input
         raise AssertionError(message)
