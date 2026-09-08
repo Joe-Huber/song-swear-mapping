@@ -6,8 +6,6 @@ dependencies). Run as:  python generate_page.py
 
 import csv
 import html
-import json
-import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -23,7 +21,6 @@ def _fmt(a) -> int:
 
 def build_dashboard(rows: list[dict], fields: list[str]):
     """Return the full HTML document as a string."""
-    band, song, year = fields[0], fields[1], fields[2]
     stems = fields[3:-1]
     total_field = fields[-1]
 
@@ -39,7 +36,25 @@ def build_dashboard(rows: list[dict], fields: list[str]):
     word_totals = {k: v for k, v in word_totals.items() if v > 0}
     top_words = sorted(word_totals.items(), key=lambda kv: kv[1], reverse=True)[:5]
 
-    top_songs = sorted(rows, key=lambda r: r["_total"], reverse=True)[:10]
+    by_total = sorted(rows, key=lambda r: r["_total"], reverse=True)
+    top_songs = by_total[:10]
+
+    chart_songs = [
+        (f"{r[fields[0]]} — {r[fields[1]]} ({r[fields[2]]})", r["_total"])
+        for r in by_total[:20]
+        if r["_total"] > 0
+    ]
+    chart_words = sorted(word_totals.items(), key=lambda kv: kv[1], reverse=True)
+
+    decade_totals = {}
+    for r in rows:
+        yr = r[fields[2]].strip()
+        if yr.isdigit():
+            decade = int(yr) // 10 * 10
+            decade_totals[decade] = decade_totals.get(decade, 0) + r["_total"]
+    chart_decades = [
+        (f"{decade}s", decade_totals[decade]) for decade in sorted(decade_totals)
+    ]
 
     col_max = {stem: max((r[f"_c_{stem}"] for r in rows), default=0) for stem in stems}
 
@@ -51,6 +66,7 @@ def build_dashboard(rows: list[dict], fields: list[str]):
 
     css = _css()
     summary = _summary_cards(len(rows), with_swears, total_swears, top_words)
+    charts = _charts_section(chart_songs, chart_words, chart_decades)
     rankings = _rankings(top_songs, top_words, leaders, fields)
     table = _table(rows, fields, stems, col_max, total_field)
 
@@ -68,6 +84,7 @@ def build_dashboard(rows: list[dict], fields: list[str]):
   <p class="sub">Built from <code>data/swear_counts.csv</code> · {len(rows)} songs</p>
 </header>
 {summary}
+{charts}
 {rankings}
 <main>
   <div class="controls">
@@ -130,6 +147,21 @@ tbody tr { border-top: 1px solid var(--border); }
 tbody tr.dim { color: #5c6270; }
 tbody tr.zero { opacity: 0.45; }
 th .dir { color: var(--accent); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 8px; }
+.chart { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.chart.span2 { grid-column: 1 / -1; }
+.chart h3 { margin: 0 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; }
+.chart svg { width: 100%; height: auto; display: block; }
+svg.chart-svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.hl { fill: var(--muted); font-size: 13px; }
+.hv { fill: var(--text); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bar { fill: var(--accent); transition: fill 0.15s; }
+.bar:hover { fill: #f87171; }
+.tooltip {
+  position: fixed; display: none; pointer-events: none; z-index: 50;
+  background: #0b0d12; border: 1px solid var(--border); color: var(--text);
+  padding: 6px 10px; border-radius: 6px; font-size: 13px; max-width: 320px;
+}
 """
 
 
@@ -147,6 +179,83 @@ def _summary_cards(total, with_swears, total_swears, top_words) -> str:
         for label, num in cards
     )
     return f'<section class="cards">{body}</section>'
+
+
+def _truncate(text: str, limit: int = 24) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _svg_h_bars(items: list[tuple[str, int]]) -> str:
+    """Horizontal bar chart from sorted (label, value) pairs, zero-dependency SVG."""
+    items = [(label, value) for label, value in items if value > 0]
+    if not items:
+        return ""
+    peak = max(value for _, value in items)
+    width, label_w, value_w, row_h = 760, 190, 44, 30
+    plot_x, plot_w = label_w, width - label_w - value_w
+    height = 24 + row_h * len(items)
+
+    parts = [f'<svg class="chart-svg" viewBox="0 0 {width} {height}" role="img">']
+    for i, (label, value) in enumerate(items):
+        y = 20 + i * row_h
+        bar_w = max(int(plot_w * value / peak), 2)
+        title = html.escape(f"{label} — {value}")
+        parts.append(
+            f'<g class="h-bar" data-label="{title}">'
+            f'<rect class="bar" x="{plot_x}" y="{y}" width="{bar_w}" height="20" rx="4"/>'
+            f'<text x="{plot_x - 8}" y="{y + 15}" text-anchor="end" class="hl">'
+            f"{html.escape(_truncate(label))}</text>"
+            f'<text x="{plot_x + bar_w + 8}" y="{y + 15}" class="hv">{value}</text>'
+            f"<title>{title}</title>"
+            f"</g>"
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _svg_v_bars(buckets: list[tuple[str, int]]) -> str:
+    """Vertical bar chart for decade buckets."""
+    if not buckets:
+        return ""
+    peak = max(value for _, value in buckets) or 1
+    width, height = 400, 190
+    plot_l, plot_r, plot_t, plot_b = 30, width - 20, 22, 150
+    slot = (plot_r - plot_l) / len(buckets)
+    bar_w = slot * 0.5
+
+    parts = [f'<svg class="chart-svg" viewBox="0 0 {width} {height}" role="img">']
+    parts.append(
+        f'<line x1="{plot_l}" y1="{plot_b}" x2="{plot_r}" y2="{plot_b}"'
+        ' stroke="var(--border)"'
+        f'/>'
+    )
+    for i, (label, value) in enumerate(buckets):
+        centre = plot_l + slot * i + slot / 2
+        bar_h = int((plot_b - plot_t) * value / peak)
+        y = plot_b - bar_h
+        title = html.escape(f"{label} — {value}")
+        parts.append(
+            f'<g class="v-bar" data-label="{title}">'
+            f'<rect class="bar" x="{centre - bar_w / 2:.1f}" y="{y}" '
+            f'width="{bar_w:.1f}" height="{bar_h}" rx="4"/>'
+            f'<text x="{centre:.1f}" y="{max(y - 6, 12)}" text-anchor="middle" class="hv">{value}</text>'
+            f'<text x="{centre:.1f}" y="{plot_b + 16}" text-anchor="middle" class="hl">'
+            f"{html.escape(label)}</text>"
+            f"<title>{title}</title>"
+            f"</g>"
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _charts_section(songs, words, decades) -> str:
+    return f"""<section class="charts">
+  <div class="chart span2"><h3>Top songs by total swears</h3>{_svg_h_bars(songs)}</div>
+  <div class="chart"><h3>Most frequent swear words</h3>{_svg_h_bars(words)}</div>
+  <div class="chart"><h3>Swears per decade</h3>{_svg_v_bars(decades)}</div>
+</section>
+<div id="tip" class="tooltip"></div>
+"""
 
 
 def _rankings(top_songs, top_words, leaders, fields) -> str:
@@ -278,6 +387,20 @@ def _js(total_index) -> str:
   });
 
   sort(col, heads[col].dataset.type);
+
+  var tip = document.getElementById("tip");
+  var svgs = Array.prototype.slice.call(document.querySelectorAll("svg.chart-svg"));
+  svgs.forEach(function (svg) {
+    svg.addEventListener("mouseover", function (e) {
+      var bar = e.target.closest ? e.target.closest(".h-bar, .v-bar") : null;
+      if (bar) { tip.textContent = bar.getAttribute("data-label"); tip.style.display = "block"; }
+    });
+    svg.addEventListener("mousemove", function (e) {
+      tip.style.left = (e.clientX + 12) + "px";
+      tip.style.top = (e.clientY + 12) + "px";
+    });
+    svg.addEventListener("mouseleave", function () { tip.style.display = "none"; });
+  });
 })();
 """ % total_index
 
