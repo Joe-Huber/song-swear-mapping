@@ -45,6 +45,7 @@ htmlcov/
 
 # Data / output
 data/*.json
+song_list.csv
 
 # Logs
 *.log
