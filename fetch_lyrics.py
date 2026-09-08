@@ -11,8 +11,10 @@ import sys
 from pathlib import Path
 
 import lyricsgenius
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env")
 SONG_LIST = ROOT / "song_list.csv"
 CACHE_DIR = ROOT / "data" / "lyrics"
 MISSES_CSV = ROOT / "data" / "misses.csv"
@@ -29,6 +31,7 @@ BAND_OVERRIDES = {
     "lars fredrickson and the b": "Lars Frederiksen and the Bastards",
     "mister t experience": "The Mr. T Experience",
     "sex pistols": "Sex Pistols",
+    "gen x": "Generation X",
     "distillers": "The Distillers",
     "get dead": "Get Dead",
     "last gang": "The Last Gang",
@@ -89,7 +92,6 @@ def main() -> None:
         timeout=15,
         retries=3,
         sleep_time=1.0,
-        verbose=False,
     )
 
     songs = read_song_list()
