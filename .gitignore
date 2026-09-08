@@ -44,7 +44,7 @@ htmlcov/
 !.env.example
 
 # Data / output
-data/*.json
+data/
 song_list.csv
 
 # Logs
