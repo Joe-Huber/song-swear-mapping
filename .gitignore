@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+*._DS_Store
+
+# IDEs / editors
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# opencode
+opencode.json
+.opencode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual envs (conda etc)
+.conda/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Data / output
+data/*.json
+
+# Logs
+*.log
+npm-debug.log*
